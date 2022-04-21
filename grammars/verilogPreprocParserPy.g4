@@ -1,18 +1,24 @@
-parser grammar verilogPreprocParser;
+parser grammar verilogPreprocParserPy;
 
-options { tokenVocab=verilogPreprocLexer;}
+options { tokenVocab=verilogPreprocLexerPy;}
 
 @parser::header {
 
 #include <hdlConvertor/language.h>
+from  hdl_language_enum import HDLLanguageEnum
+
+class hdlConverter:
+    Language = HDLLanguageEnum()
 
 }
 
-@parser::members {
-
-hdlConvertor::Language language_version;
-
-}
+/*@parser::members {
+#
+#class hdlConvertor:
+#    Language = HDLLanguageEnum()
+#
+#}
+*/
 
 file: text* EOF;
 
@@ -43,8 +49,8 @@ preprocess_directive:
     | line_directive
     | timing_spec
     | protected_block
-    | {language_version >= hdlConvertor::Language::SV2009}? undefineall
-    | {language_version >= hdlConvertor::Language::VERILOG2005}? (
+    | {language_version >= hdlConvertor.Language.SV2009}? undefineall
+    | {language_version >= hdlConvertor.Language.VERILOG2005}? (
 		keywords_directive
         | endkeywords_directive
         | pragma
@@ -55,8 +61,8 @@ define:
 ;
 
 define_args:
-     { language_version >= hdlConvertor::Language::SV2009 }? define_args_with_def_val
- 	| { language_version < hdlConvertor::Language::SV2009 }? define_args_basic
+     { language_version >= hdlConvertor.Language.SV2009 }? define_args_with_def_val
+ 	| { language_version < hdlConvertor.Language.SV2009 }? define_args_basic
 ;
 
 define_args_with_def_val:
@@ -128,7 +134,7 @@ default_nettype_value
     | TRIREG
     | UWIRE
     | NONE
-    | {language_version >= hdlConvertor::Language::VERILOG2005}? UWIRE
+    | {language_version >= hdlConvertor.Language.VERILOG2005}? UWIRE
     ;
 
 line_directive:
@@ -164,7 +170,7 @@ version_specifier:
 endkeywords_directive: END_KEYWORDS;
 include: INCLUDE (
 		 STR
-	    | {language_version >= hdlConvertor::Language::SV2005}? macro_call
+	    | {language_version >= hdlConvertor.Language.SV2005}? macro_call
     );
 
 
