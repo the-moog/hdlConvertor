@@ -4,21 +4,13 @@ options { tokenVocab=verilogPreprocLexerPy;}
 
 @parser::header {
 
-#include <hdlConvertor/language.h>
 from  hdl_language_enum import HDLLanguageEnum
 
-class hdlConverter:
+class hdlConvertor:
     Language = HDLLanguageEnum()
 
 }
 
-/*@parser::members {
-#
-#class hdlConvertor:
-#    Language = HDLLanguageEnum()
-#
-#}
-*/
 
 file: text* EOF;
 
@@ -49,8 +41,8 @@ preprocess_directive:
     | line_directive
     | timing_spec
     | protected_block
-    | {language_version >= hdlConvertor.Language.SV2009}? undefineall
-    | {language_version >= hdlConvertor.Language.VERILOG2005}? (
+    | {self.language_version >= hdlConvertor.Language.SV2009}? undefineall
+    | {self.language_version >= hdlConvertor.Language.VERILOG2005}? (
 		keywords_directive
         | endkeywords_directive
         | pragma
@@ -61,8 +53,8 @@ define:
 ;
 
 define_args:
-     { language_version >= hdlConvertor.Language.SV2009 }? define_args_with_def_val
- 	| { language_version < hdlConvertor.Language.SV2009 }? define_args_basic
+     { self.language_version >= hdlConvertor.Language.SV2009 }? define_args_with_def_val
+ 	| { self.language_version < hdlConvertor.Language.SV2009 }? define_args_basic
 ;
 
 define_args_with_def_val:
@@ -134,7 +126,7 @@ default_nettype_value
     | TRIREG
     | UWIRE
     | NONE
-    | {language_version >= hdlConvertor.Language.VERILOG2005}? UWIRE
+    | {self.language_version >= hdlConvertor.Language.VERILOG2005}? UWIRE
     ;
 
 line_directive:
@@ -157,20 +149,20 @@ keywords_directive:
 
 version_specifier:
    STR
-   //   {language_version >= hdlConvertor::Language::SV2017}? V18002017
-   // | {language_version >= hdlConvertor::Language::SV2012}? V18002012
-   // | {language_version >= hdlConvertor::Language::SV2009}? V18002009
-   // | {language_version >= hdlConvertor::Language::SV2005}? V18002005
-   // | {language_version >= hdlConvertor::Language::VERILOG2005}? V13642005
-   // | {language_version >= hdlConvertor::Language::VERILOG2001}? V13642001
-   // | {language_version >= hdlConvertor::Language::VERILOG2001_NOCONFIG }? V13642001noconfig
+   //   {self.language_version >= hdlConvertor::Language::SV2017}? V18002017
+   // | {self.language_version >= hdlConvertor::Language::SV2012}? V18002012
+   // | {self.language_version >= hdlConvertor::Language::SV2009}? V18002009
+   // | {self.language_version >= hdlConvertor::Language::SV2005}? V18002005
+   // | {self.language_version >= hdlConvertor::Language::VERILOG2005}? V13642005
+   // | {self.language_version >= hdlConvertor::Language::VERILOG2001}? V13642001
+   // | {self.language_version >= hdlConvertor::Language::VERILOG2001_NOCONFIG }? V13642001noconfig
    // | V13641995
 ;
 
 endkeywords_directive: END_KEYWORDS;
 include: INCLUDE (
 		 STR
-	    | {language_version >= hdlConvertor.Language.SV2005}? macro_call
+	    | {self.language_version >= hdlConvertor.Language.SV2005}? macro_call
     );
 
 
