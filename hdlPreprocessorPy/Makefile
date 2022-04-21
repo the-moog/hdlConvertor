@@ -20,7 +20,7 @@ PIP := pip
 MODULE := source $(moduleshome)/init/$(shell_type); module
 GIT := git
 JAVA := java
-ANTLR4PY3 := antlr4 -Xlog -Dlanguage=Python3
+ANTLR4PY3 := antlr4 -Dlanguage=Python3
 
 
 
@@ -40,7 +40,7 @@ define ANTLR_SOURCE_LOCATIONS
 4
 SVPPLexer			../grammars											verilogPreprocLexer.g4		-
 SVPPLexerPy			../grammars											verilogPreprocLexerPy.g4	-
-SVPPParserPy		../grammars											verilogPreprocParserPy.g4	-
+SVPPParserPy		../grammars											verilogPreprocParserPy.g4	SVPPLexerPy
 Hello   			../../../../sandbox/antlr/py3antlr4book/01-Hello	*.iml|*.g4|test_hello.py	-
 run-Hello			-													-							Hello
 endef
@@ -134,6 +134,12 @@ get_prereq = $(strip $(call lookup,PREREQ,$1))
 
 ALL_PROJ = $(call get_column,PROJ)
 
+get_build_dir = $(build_dir)/$1
+
+has_prereq = $(if $(call get_prereq,$1),Y,)
+
+ALL_BUILD_DIRS = $(sort $(foreach PROJ,$(ALL_PROJ),$(build_dir)/$(PROJ)))
+
 # Get a list of source assets for a project#
 # $1 = Project
 get_source_assets = $(foreach PATTERN,$(call lookup,SRC_GLOB,$1),$(wildcard $(call lookup,SRC_DIR,$1)/$(PATTERN)))
@@ -155,6 +161,10 @@ $(build_dir)/$1/$(notdir $2): $(build_dir)/$1 $2
 	cp $2 $(build_dir)/$1
 endef
 
+
+#$(if $(call has_prereq,$$1),-lib ../../$(call get_build_dir,$(call get_prereq,$$1)))
+#$(build_dir)/$1/$1.py: LIBS = $(foreach ASSET,$(call get_source_assets,$1),$(eval $(call collect_asset,$1,$(ASSET))))
+
 # Function to create a built target
 # $1: project name
 define create_target = 
@@ -166,6 +176,8 @@ $(build_dir)/$1:
 # Make a target for each asset
 $(foreach ASSET,$(call get_source_assets,$1),$(eval $(call collect_asset,$1,$(ASSET))))
 
+$1_LIBS = $(call get_prereq,$1)
+
 $(build_dir)/$1/$1.py: $(filter %.g4,$(call get_build_assets,$1)) | $(antlr4_runtime) $(filter-out %.g4,$(call get_build_assets,$1))
 	@echo -e "\n-----------------------------\n"
 	@echo -e "Building parser $$@"
@@ -173,8 +185,9 @@ $(build_dir)/$1/$1.py: $(filter %.g4,$(call get_build_assets,$1)) | $(antlr4_run
 	$(MODULE) switch ./antlr4module;\
 	cd $$(dir $$^);\
 	if ! [ -L antlr.jar ]; then ln -s ../../antlr.jar antlr.jar;fi;\
-	echo "Building from $$(notdir $$^) in $$(dir $$^)";\
-	echo "$$(notdir $$^)" | xargs $(ANTLR4PY3)
+	echo "Building $1 from $$(notdir $$^) in $$(dir $$^) $$(if $$(call has_prereq,$1),with $$(call get_prereq,$1))";\
+	echo "$$(notdir $$^)" | xargs $(ANTLR4PY3) $(if $(call has_prereq,$1),-lib ../../build/$(call get_prereq,$1))
+
 
 
 run-$1: $(build_dir)/$1/$1.py
@@ -209,8 +222,8 @@ $(info pyside2 :  $(pyside2_version))
 $(info ------------------------------)
 $(info targets :  $(ALL_PROJ))
 $(info prereqs :  $(PREREQ_PROJ))
+$(info builddir:  $(ALL_BUILD_DIRS))
 $(info ------------------------------)
-
 
 # Now we know which version we have we can get the correct runtime
 antlr_jar := antlr-$(py_antlr_version)-complete.jar
