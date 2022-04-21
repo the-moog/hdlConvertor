@@ -4,18 +4,11 @@ lexer grammar verilogPreprocLexerPy;
 //        where comments has to be removed
 channels { CH_LINE_ESCAPE, CH_LINE_COMMENT, CH_COMMENT}
 
-@lexer::members {
+@lexer::header {
 
-from unsigned import Unsigned
-from typing import TypeVar
-
+from autobuild.utils.unsigned import Unsigned
+from typing import TypeVar, Union
 text = TypeVar('text', str, bytes) 
-
-bool define_in_def_val:bool = False
-bool define_param_LP_seen:bool = False  ## 0 in original code???
-bool macro_call_LP_seen:bool = False
-
-
 
 class ExpressionParsingMetaInfo:
     parenthesis: int = 0
@@ -28,10 +21,10 @@ class ExpressionParsingMetaInfo:
 
     def expression_parsing_meta_info(self) -> bool:
         self.reset()
-        self.exit_from_parent_mode_on_lp = false
+        self.exit_from_parent_mode_on_lp = False
 
-    def no_brace_active(self): -> bool
-        return self.parenthesis == 0 && self.braces == 0 && self.square_braces == 0
+    def no_brace_active(self) -> bool:
+        return self.parenthesis == 0 and self.braces == 0 and self.square_braces == 0
 
     def _reset(self):
         self.parenthesis = 0
@@ -43,9 +36,9 @@ class ExpressionParsingMetaInfo:
         self.next_mode = 0
         
     
-    def reset(self, _exit_from_parent_mode_on_lp:(None, bool) = None,
-                    _reenter_expr_on_tailing_comma:(None, book) = None),
-                    _next_mode:(None, unsigned) = None:
+    def reset(self, _exit_from_parent_mode_on_lp:Union[None, bool] = None,
+                    _reenter_expr_on_tailing_comma:Union[None, book] = None,
+                    _next_mode:Union[None, Unsigned] = None):
         self._reset()
         if _exit_from_parent_mode_on_lp is not None and _reenter_expr_on_tailing_comma is not None:
             self.reenter_expr_on_tailing_comma = _reenter_expr_on_tailing_comma
@@ -56,15 +49,21 @@ class ExpressionParsingMetaInfo:
             else:
                 self.next_mode_set = False
 
+}
+
+@lexer::members {
+
+define_in_def_val:bool = False
+define_param_LP_seen:bool = False  ## 0 in original code???
+macro_call_LP_seen:bool = False
 expr_p_meta = ExpressionParsingMetaInfo()
 
+@staticmethod
 def cut_off_line_comment(s: text):
     if "//" in s:
         s = s.split("//",1)[0]
     return s
 }
-
-
 
 fragment CRLF : '\r'? '\n';
 fragment LETTER: [a-zA-Z] ;
@@ -87,18 +86,15 @@ CODE: (~('`' | '/' | '"' | '\\')
         | '`' '`'
         // [todo] `"x\"`y\"`"' is interpreted as a CODE but there is `y
         | '\\' (~[ \t\r\n])* ([ \t\r\n] | EOF) // escaped id or \"
-       )+ ( '/' '`'
-           { {
-                #// [TODO] /" is still causing an error
-                assert getText().back() == '`'
-                t = getText()
-                setText(t.substr(0, t.size()-1))
-                pushMode(DIRECTIVE_MODE)
-           } }
-       )?
-;
-MACRO_ENTER: '`' -> pushMode(DIRECTIVE_MODE),skip;
+       )+ ( '/' '`' {
+#// [TODO] /" is still causing an error
+assert self.getText().back() == '`'
+t = self.getText()
+self.setText(t.substr(0, t.size()-1))
+self.pushMode(self.DIRECTIVE_MODE)
+})?;
 
+MACRO_ENTER: '`' -> pushMode(DIRECTIVE_MODE),skip;
 
 mode DIRECTIVE_MODE;
     D_STR: STR -> type(STR);
@@ -108,9 +104,9 @@ mode DIRECTIVE_MODE;
     DEFINE:  'define'  F_WS+ F_LINE_ESCAPE*
             ( ( LINE_COMMENT | COMMENT ) F_WS* F_LINE_ESCAPE*)?
             (F_WS | F_LINE_ESCAPE)* {
-                define_in_def_val = false
-                define_param_LP_seen = false
-            } -> popMode,pushMode(DEFINE_MODE);
+self.define_in_def_val = False
+self.define_param_LP_seen = False
+} -> popMode,pushMode(DEFINE_MODE);
     IFNDEF: 'ifndef' F_WS+ -> popMode,pushMode(IFDEF_MODE);
     IFDEF:  'ifdef'  F_WS+ -> popMode,pushMode(IFDEF_MODE);
     ELSIF:  'elsif'  F_WS+ -> popMode,pushMode(IFDEF_MODE);
@@ -132,73 +128,72 @@ mode DIRECTIVE_MODE;
     NOUNCONNECTED_DRIVE: 'nounconnected_drive' WS_ENDING_NEW_LINE -> popMode;
     PROTECTED: 'protected' ANY_WS -> popMode,pushMode(PROTECTED_MODE);
     OTHER_MACRO_CALL_WITH_ARGS:  F_ID F_WS* '(' {
-            macro_call_LP_seen = true
-            popMode()
-            pushMode(MACRO_ARG_LIST_MODE)
-            pushMode(EXPR_MODE)
-            expr_p_meta.reset(true, true) ## on ')' return to DEFAULT_MODE
-        };
+self.macro_call_LP_seen = True
+self.popMode()
+self.pushMode(self.MACRO_ARG_LIST_MODE)
+self.pushMode(self.EXPR_MODE)
+self.expr_p_meta.reset(True, True) ## on ')' return to DEFAULT_MODE
+};
     OTHER_MACRO_CALL_NO_ARGS: F_ID -> popMode;
 
 
 // used when parsing the id, param list of define macro
 mode DEFINE_MODE;
     DM_LINE_COMMENT: LINE_COMMENT {
-        if define_param_LP_seen:
-            skip()
-        else:
-            ## this define will not have any more parameter or body lines
-            setType(LINE_COMMENT);
-            popMode();
-        
-    };
+if self.define_param_LP_seen:
+    self.skip()
+else:
+    ## this define will not have any more parameter or body lines
+    self.setType(self.LINE_COMMENT);
+    self.popMode();
+};
     DM_COMMENT: COMMENT {
-        if define_in_def_val:
-            setType(CODE)
-        else:
-            skip()
-    };
+if self.define_in_def_val:
+    self.setType(self.CODE)
+else:
+    self.skip()
+};
     LINE_ESCAPE: F_LINE_ESCAPE -> channel(CH_LINE_ESCAPE);
     LP: '(' {
-        assert not define_param_LP_seen
-        define_param_LP_seen = true
-    };
+assert not self.define_param_LP_seen
+self.define_param_LP_seen = True
+};
     RP: ')' WS* {
-        if define_param_LP_seen:
-            ## is ')' in the param list
-            popMode()
-            pushMode(DEFINE_BODY_MODE)
-        else:
-            setType(CODE)
-            popMode()
-            pushMode(DEFINE_BODY_MODE)
-    };
+if self.define_param_LP_seen:
+    ## is ')' in the param list
+    self.popMode()
+    self.pushMode(self.DEFINE_BODY_MODE)
+else:
+    self.setType(self.CODE)
+    self.popMode()
+    self.pushMode(self.DEFINE_BODY_MODE)
+};
     COMMA: ',';
     EQUAL: '=' {
-        ## if there is ')' jump directly to DEFINE_BODY_MODE
-        expr_p_meta.reset(true, false, DEFINE_BODY_MODE)
+## if there is ')' jump directly to DEFINE_BODY_MODE
+self.expr_p_meta.reset(True, False, self.DEFINE_BODY_MODE)
     } -> pushMode(EXPR_MODE);
     DM_NEW_LINE: CRLF {
-        if define_param_LP_seen:
-            skip()
-        else:
-            setType(NEW_LINE)
-            popMode()
-    };
+if self.define_param_LP_seen:
+    self.skip()
+else:
+    self.setType(self.NEW_LINE)
+    self.popMode()
+};
     WS: F_WS+ {
-        if define_param_LP_seen):
-            skip()
-        else:
-            ## inside of define body
-            popMode()
-            pushMode(DEFINE_BODY_MODE)
-    };
+if self.define_param_LP_seen:
+    self.skip()
+else:
+    ## inside of define body
+    self.popMode()
+    self.pushMode(self.DEFINE_BODY_MODE)
+};
     ID: F_ID;
     DN_CODE: ( ( '`' '"' ) |  ~('\\'| '\n' | '"') | ( '\\'+ ~[\n]) )+? {
-        ## inside of define body
-        popMode()
-        pushMode(DEFINE_BODY_MODE)
-    } -> type(CODE); // .* except newline or esacped newline
+## inside of define body
+self.popMode()
+self.pushMode(self.DEFINE_BODY_MODE)
+} -> type(CODE); // .* except newline or esacped newline
 
 
 
@@ -207,42 +202,42 @@ mode EXPR_MODE;
     EXPR_MODE_COMMENT: COMMENT -> type(CODE);
     // everything without strings, comments, all types of parenthesis and comma
     EXPR_CODE: (~('[' | ']' | '(' | ')' | '"' | '{' | '}' | ','))+ ->type(CODE);
-    EXPR_MODE_LP: '(' { expr_p_meta.parenthesis := 1 } -> type(CODE);
+    EXPR_MODE_LP: '(' { self.expr_p_meta.parenthesis += 1 } -> type(CODE);
     EXPR_MODE_RP: ')' {
-        if expr_p_meta.parenthesis > 0:
-            expr_p_meta.parenthesis -= 1
-            ## parenthesis in this expression
-            setType(CODE)
-        else:
-            ## parenthesis from outside
-            setType(RP)
-            ## exit from this mode
-            popMode()
-            if expr_p_meta.exit_from_parent_mode_on_lp:
-                popMode()
-            if expr_p_meta.next_mode_set:
-                pushMode(expr_p_meta.next_mode)
-    };
-    EXPR_MODE_LBR: '{' { expr_p_meta.braces += 1 } -> type(CODE);
+if self.expr_p_meta.parenthesis > 0:
+    self.expr_p_meta.parenthesis -= 1
+    ## parenthesis in this expression
+    self.setType(self.CODE)
+else:
+    ## parenthesis from outside
+    self.setType(self.RP)
+    ## exit from this mode
+    self.popMode()
+    if self.expr_p_meta.exit_from_parent_mode_on_lp:
+        self.popMode()
+    if self.expr_p_meta.next_mode_set:
+        self.pushMode(self.expr_p_meta.next_mode)
+};
+    EXPR_MODE_LBR: '{' { self.expr_p_meta.braces += 1 } -> type(CODE);
     EXPR_MODE_RBR: '}' {
-        if expr_p_meta.braces > 0:
-            expr_p_meta.braces -= 1
-    } -> type(CODE);
-    EXPR_MODE_LSQR: '[' { expr_p_meta.square_braces += 1 } -> type(CODE);
+if self.expr_p_meta.braces > 0:
+    self.expr_p_meta.braces -= 1
+} -> type(CODE);
+    EXPR_MODE_LSQR: '[' { self.expr_p_meta.square_braces += 1 } -> type(CODE);
     EXPR_MODE_RSQR: ']' {
-        if expr_p_meta.square_braces > 0:
-            expr_p_meta.square_braces -= 1
-    } -> type(CODE);
+if self.expr_p_meta.square_braces > 0:
+    self.expr_p_meta.square_braces -= 1
+} -> type(CODE);
     EXPR_MODE_COMMA: ',' {
-        if expr_p_meta.no_brace_active():
-            ## comma from the outside (separating arguments or parameters)
-            setType(COMMA)
-            if not expr_p_meta.reenter_expr_on_tailing_comma:
-                popMode()
-        else:
-            ## comma inside of expression
-            setType(CODE)
-    };
+if self.expr_p_meta.no_brace_active():
+    ## comma from the outside (separating arguments or parameters)
+    self.setType(self.COMMA)
+    if not self.expr_p_meta.reenter_expr_on_tailing_comma:
+        self.popMode()
+else:
+    ## comma inside of expression
+    self.setType(self.CODE)
+};
     EXPR_MODE_STR: STR -> type(CODE);
 
 
@@ -256,8 +251,8 @@ mode DEFINE_BODY_MODE;
         	| ('`' '\\' '`')+ '"' // the '\"' in macro escape
         	| ~('\\'| '\n' | '"')
         )+ {
-        setText(cut_off_line_comment(getText()))
-    } -> type(CODE); // .* except newline or esacped newline
+self.setText(self.cut_off_line_comment(self.getText()))
+} -> type(CODE); // .* except newline or esacped newline
     NEW_LINE: CRLF -> popMode;
 
 
@@ -265,32 +260,32 @@ mode DEFINE_BODY_MODE;
 mode MACRO_ARG_LIST_MODE;
     // there has to be argument list or any non id/num value behind the macro call
     MA_COMMA: ',' {
-        if macro_call_LP_seen:
-            ## this is a ',' in the arg list of macro
-            setType(COMMA)
-            pushMode(EXPR_MODE)
-            expr_p_meta.reset(true, true)  ## on ')' return to DEFAULT_MODE on ')', reenter new EXPR_MODE on ','
-        else:
-            ## [note] in normal case this should not happen as arguments should have be processed in EXPR_MODE and
-            ##         ')' in text should cause exit also from this mode
-            ## this macro has not a argument and this ',' is behind it
-            setType(CODE)
-            popMode()
-    };
+if self.macro_call_LP_seen:
+    ## this is a ',' in the arg list of macro
+    self.setType(self.COMMA)
+    self.pushMode(self.EXPR_MODE)
+    self.expr_p_meta.reset(True, True)  ## on ')' return to DEFAULT_MODE on ')', reenter new EXPR_MODE on ','
+else:
+    ## [note] in normal case this should not happen as arguments should have be processed in EXPR_MODE and
+    ##         ')' in text should cause exit also from this mode
+    ## this macro has not a argument and this ',' is behind it
+    self.setType(self.CODE)
+    self.popMode()
+};
     MA_RP: ')' {
-        if macro_call_LP_seen):
-            ## this is a last ')' which is closing the argument list
-            setType(RP)
-            popMode()  ## back to default mode
-            macro_call_LP_seen = false
-        else:
-            assert False, "This ')' is a part of code and not preprocessor code and should not be processed in  MACRO_ARG_LIST_MODE")
-    };
+if self.macro_call_LP_seen:
+    ## this is a last ')' which is closing the argument list
+    self.setType(self.RP)
+    self.popMode()  ## back to default mode
+    self.macro_call_LP_seen = False
+else:
+    assert False, "This ')' is a part of code and not preprocessor code and should not be processed in  MACRO_ARG_LIST_MODE"
+};
     MA_CODE: (STR | ~[,()"] )+? {
-        ## string or non parenthesis
-        ## this code does not bellongs to a MACRO_ARG and it is part of code behind the macro call
-        popMode()
-    } -> type(CODE);
+## string or non parenthesis
+## this code does not bellongs to a MACRO_ARG and it is part of code behind the macro call
+self.popMode()
+} -> type(CODE);
 
 mode IFDEF_MODE;
     NUM: F_DIGIT+;
