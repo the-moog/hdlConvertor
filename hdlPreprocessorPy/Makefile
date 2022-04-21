@@ -6,10 +6,13 @@ include gmtt/gmtt.mk
 py3_minver := 8
 py3_maxver := 10
 
-SHELL := /bin/bash
+SHELL := /bin/bash -O expand_aliases
 
 shell_type := $(notdir $(SHELL))
 moduleshome := $(shell echo $$MODULESHOME)
+
+# Tool Libraries
+antlr4_runtime := antlr.jar
 
 # Toolchain
 PY := python
@@ -17,10 +20,9 @@ PIP := pip
 MODULE := source $(moduleshome)/init/$(shell_type); module
 GIT := git
 JAVA := java
-ANTLR4PY3 := java org.antlr.v4.Tool -Dlanguage=Python3
+ANTLR4PY3 := antlr4 -Xlog -Dlanguage=Python3
 
-# Tool Libraries
-antlr4_runtime := antlr.jar
+
 
 # Public source locations
 antlr4_dl_url := https://www.antlr.org/download/
@@ -28,19 +30,23 @@ p3_antlr_book_git := https://github.com/jszheng/py3antlr4book
 ex_01_dir := 01-Hello
 
 # define a table of 3 columns: <unique_project_name> <SRC_DIR:source_dir> <SRC_GLOB:file_globs>
-# use | (bar) to make the list of globs or files if there is more than one
+# use | (bar) to make the list of globs or files if there is more than one minus (-) is used for an empty field
 PROJ = 1
 SRC_DIR = 2
 SRC_GLOB = 3
 PREREQ = 4
+# <PROJECT>			<SOURCE PATH|->										<SOURCE GLOB|->				<PREREQUISITE|->
 define ANTLR_SOURCE_LOCATIONS
 4
-SVPPLexerPy		../grammars									verilogPreprocLexerPy.g4	-
-SVPPParserPy	../grammars									verilogPreprocParserPy.g4	-
-Hello   		../../../../sandbox/antlr/py3antlr4book/01-Hello		*.iml|*.g4|test_hello.py	-
-run-hello		-											-							Hello
-test-svpp-lexer -											-							SVPPLexerPy
+SVPPLexer			../grammars											verilogPreprocLexer.g4		-
+SVPPLexerPy			../grammars											verilogPreprocLexerPy.g4	-
+SVPPParserPy		../grammars											verilogPreprocParserPy.g4	-
+Hello   			../../../../sandbox/antlr/py3antlr4book/01-Hello	*.iml|*.g4|test_hello.py	-
+run-Hello			-													-							Hello
 endef
+
+#test-SVPPLexerPy 	-													-							SVPPLexerPy
+
 
 # NOTE: ANTLR mandates that the .g4 file name must match the defined ANTLR symbol within that
 # file and that the target language output files also have the same name pattern
@@ -128,17 +134,24 @@ get_prereq = $(strip $(call lookup,PREREQ,$1))
 
 ALL_PROJ = $(call get_column,PROJ)
 
-get_assets = $(foreach PATTERN,$(call lookup,SRC_GLOB,$1),$(wildcard $(call lookup,SRC_DIR,$1)/$(PATTERN)))
+# Get a list of source assets for a project#
+# $1 = Project
+get_source_assets = $(foreach PATTERN,$(call lookup,SRC_GLOB,$1),$(wildcard $(call lookup,SRC_DIR,$1)/$(PATTERN)))
 
 $(info ASSETS---------)
-$(foreach PROJ,$(ALL_PROJ),$(foreach ASSET,$(call get_assets,$(PROJ)),$(info $(PROJ): $(ASSET))))
+$(foreach PROJ,$(ALL_PROJ),$(foreach ASSET,$(call get_source_assets,$(PROJ)),$(info $(PROJ): $(ASSET))))
 $(info ---------------)
 
-# Function to collect an asset and make a target for it
+# Take a list of source assets and convert into a list of build assets
+# $1 = Project
+get_build_assets = $(foreach ASSET,$(call get_source_assets,$1),$(build_dir)/$1/$(notdir $(ASSET)))
+
+# Function to collect a source asset and make a target for it that copies it to a build asset
 # $1 project name 
-# $2 path to asset
+# $2 path to source asset
 define collect_asset =
-$(build_dir)/$1/$(notdir $2): $(build_dir)/$1
+$(build_dir)/$1/$(notdir $2): $(build_dir)/$1 $2
+	@echo -e "Copying source to $$@"
 	cp $2 $(build_dir)/$1
 endef
 
@@ -147,15 +160,29 @@ endef
 define create_target = 
 # Make the build folder
 $(build_dir)/$1:
+	@echo -e "\nCreate build directory"
 	mkdir -p $(build_dir)/$1
 
-$(foreach ASSET,$(call get_assets,$1),$(eval $(call collect_asset,$1,$(ASSET))))
+# Make a target for each asset
+$(foreach ASSET,$(call get_source_assets,$1),$(eval $(call collect_asset,$1,$(ASSET))))
 
-$(build_dir)/$1/$1.py: $(call get_assets,$1) $(antlr4_runtime)
-	@echo -e "\nBuilding the parser"
-	$(MODULE) clear -f;\
+$(build_dir)/$1/$1.py: $(filter %.g4,$(call get_build_assets,$1)) | $(antlr4_runtime) $(filter-out %.g4,$(call get_build_assets,$1))
+	@echo -e "\n-----------------------------\n"
+	@echo -e "Building parser $$@"
+	@$(MODULE) clear -f;\
 	$(MODULE) switch ./antlr4module;\
-	$(ANTLR4PY3) $(filter %.g4,$<)
+	cd $$(dir $$^);\
+	if ! [ -L antlr.jar ]; then ln -s ../../antlr.jar antlr.jar;fi;\
+	echo "Building from $$(notdir $$^) in $$(dir $$^)";\
+	echo "$$(notdir $$^)" | xargs $(ANTLR4PY3)
+
+
+run-$1: $(build_dir)/$1/$1.py
+	@$(MODULE) clear -f;\
+	$(MODULE) switch ./antlr4module;\
+	cd $$(dir $$^);\
+	echo -e "\n";\
+	pygrun $1 r --tokens input.txt
 
 $1: $(build_dir)/$1/$1.py
 endef
@@ -189,15 +216,6 @@ $(info ------------------------------)
 antlr_jar := antlr-$(py_antlr_version)-complete.jar
 antlr_jar_dl := $(antlr4_dl_url)$(antlr_jar)
 
-
-run-hello: |$(example_01) $(ex_01_dir)/test_hello.py
-	@echo -e "\nRunning $@ example"
-	$(MODULE) clear -f;\
-	$(MODULE) switch ./antlr4module;\
-	cd $(ex_01_dir);\
-	echo -e "\n";\
-	pygrun Hello r --tokens input.txt
-
 # Download the appropriate ANTLR runtime if we don't have it
 $(antlr_jar):
 	@echo -e "\nObtaining ANTLR Java Runtime Library"
@@ -207,7 +225,7 @@ $(antlr_jar):
 
 # Create a symlink to the correct ANTLR version to make the name constant
 $(antlr4_runtime): $(antlr_jar)
-	@echo -e "\nCreating symlink to the tools"
+	@echo -e "\nCreating symlink to the tools\n"
 	@ln -s $(antlr_jar) $(antlr4_runtime)
 
 # There is a bug in module which means "module load" does create aliases, but module "switch does"!!
@@ -219,12 +237,8 @@ $(example_01)&: $(ex_01_dir)/Hello.g4 $(antlr4_runtime)
 	$(ANTLR4PY3) $<
 
 clean:
-	$(for folder in src_folders, $(exec $(call cleanfolder )))
-	cd $(ex_01_dir);\
-	rm -rf __pycache__;\
-	rm -rf *.interp;\
-	rm -rf *.tokens;\
-	rm -rf Hello[LP]*
+	rm -rf build
+	rm -rf __pycache__
 	rm *.jar
 
 .PHONY: clean all $(PREREQ_PROJ) $(ALL_PROJ)

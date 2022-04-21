@@ -88,13 +88,13 @@ CODE: (~('`' | '/' | '"' | '\\')
         // [todo] `"x\"`y\"`"' is interpreted as a CODE but there is `y
         | '\\' (~[ \t\r\n])* ([ \t\r\n] | EOF) // escaped id or \"
        )+ ( '/' '`'
-           {
-                ## [TODO] /" is still causing an error
+           { {
+                #// [TODO] /" is still causing an error
                 assert getText().back() == '`'
                 t = getText()
                 setText(t.substr(0, t.size()-1))
                 pushMode(DIRECTIVE_MODE)
-           }
+           } }
        )?
 ;
 MACRO_ENTER: '`' -> pushMode(DIRECTIVE_MODE),skip;
@@ -374,4 +374,5 @@ mode PROTECTED_MODE;
     PROTECTED_WS : ANY_WS+ -> skip;
     ENDPROTECTED: '`endprotected' -> popMode;
     PROTECTED_LINE : (~[ \t\n\r])+;
+
 

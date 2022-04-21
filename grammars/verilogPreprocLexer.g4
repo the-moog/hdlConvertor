@@ -63,7 +63,11 @@ inline std::string cut_off_line_comment(const std::string & str) {
     return str;
 }
 
+
+
 }
+
+
 
 fragment CRLF : '\r'? '\n';
 fragment LETTER: [a-zA-Z] ;
@@ -87,6 +91,12 @@ CODE: (~('`' | '/' | '"' | '\\')
         // [todo] `"x\"`y\"`"' is interpreted as a CODE but there is `y
         | '\\' (~[ \t\r\n])* ([ \t\r\n] | EOF) // escaped id or \"
        )+ ( '/' '`'
+
+       )?
+;
+MACRO_ENTER: '`' -> pushMode(DIRECTIVE_MODE),skip;
+
+/*
            { {
               // [TODO] /" is still causing an error
               assert(getText().back() == '`');
@@ -94,11 +104,7 @@ CODE: (~('`' | '/' | '"' | '\\')
               setText(t.substr(0, t.size()-1));
               pushMode(DIRECTIVE_MODE);
            } }
-       )?
-;
-MACRO_ENTER: '`' -> pushMode(DIRECTIVE_MODE),skip;
-
-
+*/
 mode DIRECTIVE_MODE;
     D_STR: STR -> type(STR);
     D_LINE_COMMENT : LINE_COMMENT -> popMode,type(LINE_COMMENT),channel(CH_LINE_COMMENT);
